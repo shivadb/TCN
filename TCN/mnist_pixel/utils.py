@@ -3,6 +3,12 @@ from torchvision import datasets, transforms
 
 
 def data_generator(root, batch_size):
+    new_mirror = 'https://ossci-datasets.s3.amazonaws.com/mnist'
+    datasets.MNIST.resources = [
+                                ('/'.join([new_mirror, url.split('/')[-1]]), md5)
+                                for url, md5 in datasets.MNIST.resources
+                                ]
+                                
     train_set = datasets.MNIST(root=root, train=True, download=True,
                                transform=transforms.Compose([
                                    transforms.ToTensor(),

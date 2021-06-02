@@ -2,8 +2,10 @@ import torch
 from torch.autograd import Variable
 import torch.optim as optim
 import torch.nn.functional as F
-import sys
-sys.path.append("../../")
+import os, sys
+from pathlib import Path
+# sys.path.append("..\\..\\")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from TCN.mnist_pixel.utils import data_generator
 from TCN.mnist_pixel.model import TCN
 import numpy as np
@@ -36,6 +38,12 @@ parser.add_argument('--seed', type=int, default=1111,
                     help='random seed (default: 1111)')
 parser.add_argument('--permute', action='store_true',
                     help='use permuted MNIST (default: false)')
+parser.add_argument('--savedir', type=Path, default='./models',
+                    help='directory to save model')
+parser.add_argument('--savemodel', action='store_true',
+                    help='save best model (default: false)')
+parser.add_argument('--modelname', default='model',
+                    help='name used to save trained model')
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -70,6 +78,7 @@ optimizer = getattr(optim, args.optim)(model.parameters(), lr=lr)
 def train(ep):
     global steps
     train_loss = 0
+    epoch_loss = []
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda: data, target = data.cuda(), target.cuda()
@@ -85,6 +94,7 @@ def train(ep):
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
         train_loss += loss
+        epoch_loss.append(loss.item())
         steps += seq_length
         if batch_idx > 0 and batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tSteps: {}'.format(
@@ -92,6 +102,7 @@ def train(ep):
                 100. * batch_idx / len(train_loader), train_loss.item()/args.log_interval, steps))
             train_loss = 0
 
+    return np.array(epoch_loss).mean()
 
 def test():
     model.eval()
@@ -104,14 +115,14 @@ def test():
             data = data.view(-1, input_channels, seq_length)
             if args.permute:
                 data = data[:, :, permute]
-            data, target = Variable(data, volatile=True), Variable(target)
+            # data, target = Variable(data, volatile=True), Variable(target)
             output = model(data)
             test_loss += F.nll_loss(output, target, size_average=False).item()
             pred = output.data.max(1, keepdim=True)[1]
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
         test_loss /= len(test_loader.dataset)
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
         return test_loss
@@ -119,8 +130,14 @@ def test():
 
 if __name__ == "__main__":
     for epoch in range(1, epochs+1):
-        train(epoch)
-        test()
+        train_loss = train(epoch)
+        lowest_test_loss = None
+        test_loss = test()
+
+        if args.savemodel and (not lowest_test_loss or test_loss < lowest_test_loss):
+            fname = args.modelname if args.modelname.endswith('.pt') or args.modelname.endswith('.pth') else args.modelname + '.pt'
+            torch.save(model.state_dict(), args.savedir / fname)
+
         if epoch % 10 == 0:
             lr /= 10
             for param_group in optimizer.param_groups:

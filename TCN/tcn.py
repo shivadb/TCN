@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
-
+from .utils import TensorQueue, CircularQueue
 
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
@@ -15,6 +15,8 @@ class Chomp1d(nn.Module):
 class TemporalBlock(nn.Module):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
         super(TemporalBlock, self).__init__()
+        self.in_ch, self.k, self.d = n_inputs, kernel_size, dilation
+
         self.conv1 = weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size,
                                            stride=stride, padding=padding, dilation=dilation))
         self.chomp1 = Chomp1d(padding)
@@ -32,16 +34,58 @@ class TemporalBlock(nn.Module):
         self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         self.relu = nn.ReLU()
         self.init_weights()
-
+    
     def init_weights(self):
         self.conv1.weight.data.normal_(0, 0.01)
         self.conv2.weight.data.normal_(0, 0.01)
         if self.downsample is not None:
             self.downsample.weight.data.normal_(0, 0.01)
 
+    def fast_inference(self, batch_size):
+        device = next(self.parameters()).device
+
+        self.fast_conv1 = weight_norm(nn.Conv1d(self.conv1.in_channels, self.conv1.out_channels, 
+                                           self.conv1.kernel_size, stride=self.conv1.stride, 
+                                           padding=0, dilation=self.conv1.dilation)).to(device)
+        self.fast_conv1.load_state_dict(self.conv1.state_dict())
+
+        self.fast_conv2 = weight_norm(nn.Conv1d(self.conv2.in_channels, self.conv2.out_channels, 
+                                           self.conv2.kernel_size, stride=self.conv2.stride, 
+                                           padding=0, dilation=self.conv2.dilation)).to(device)
+        self.fast_conv2.load_state_dict(self.conv2.state_dict())
+
+        self.cache = [CircularQueue(torch.zeros(batch_size, l.in_channels, (l.kernel_size[0]-1)*l.dilation[0] + 1).to(device))
+                      for l in (self.fast_conv1, self.fast_conv2)]
+
+        self.stage1 = nn.Sequential(self.fast_conv1, self.relu1)
+        self.stage2 = nn.Sequential(self.fast_conv2, self.relu2)
+
+    def reset_cache(self):
+        device = next(self.parameters()).device
+        for t in self.cache:
+            t.tensor = torch.zeros(t.tensor.size()).to(device)
+
+
     def forward(self, x):
         out = self.net(x)
         res = x if self.downsample is None else self.downsample(x)
+        return self.relu(out + res)
+    
+    def single_forward(self, x):
+        '''
+        x is of shape (B, CH, 1)
+        '''
+        out = x
+        for i, l in enumerate((self.stage1, self.stage2)):
+            self.cache[i].push(out)
+            # out = l(self.cache[i]())
+            out = l(self.cache[i]()[:x.size()[0], :, :])
+            # print(f'\t out {i} shape: {out.size()}')
+
+
+        res = x if self.downsample is None else self.downsample(x)
+        # print(f'\t res shape: {res.size()}')
+
         return self.relu(out + res)
 
 
@@ -59,5 +103,22 @@ class TemporalConvNet(nn.Module):
 
         self.network = nn.Sequential(*layers)
 
+    def fast_inference(self, batch_size):
+        for block in self.network:
+            block.fast_inference(batch_size)
+
     def forward(self, x):
         return self.network(x)
+
+    def single_forward(self, x):
+        out = x
+        for i, block in enumerate(self.network):
+            out = block.single_forward(out)
+            # print(f'out {i} shape: {out.size()}')
+            # print()
+
+        return out
+
+    def reset_cache(self):
+        for block in self.network:
+            block.reset_cache()
