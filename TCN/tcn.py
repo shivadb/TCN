@@ -94,13 +94,14 @@ class TemporalConvNet(nn.Module):
         super(TemporalConvNet, self).__init__()
         layers = []
         num_levels = len(num_channels)
+        self.receptive_field = 1
         for i in range(num_levels):
             dilation_size = 2 ** i
             in_channels = num_inputs if i == 0 else num_channels[i-1]
             out_channels = num_channels[i]
             layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
                                      padding=(kernel_size-1) * dilation_size, dropout=dropout)]
-
+            self.receptive_field += 2*(kernel_size-1)*dilation_size
         self.network = nn.Sequential(*layers)
 
     def fast_inference(self, batch_size):

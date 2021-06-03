@@ -10,6 +10,7 @@ from TCN.mnist_pixel.utils import data_generator
 from TCN.mnist_pixel.model import TCN
 import numpy as np
 import argparse
+import pickle
 
 parser = argparse.ArgumentParser(description='Sequence Modeling - (Permuted) Sequential MNIST')
 parser.add_argument('--batch_size', type=int, default=64, metavar='N',
@@ -34,7 +35,7 @@ parser.add_argument('--optim', type=str, default='Adam',
                     help='optimizer to use (default: Adam)')
 parser.add_argument('--nhid', type=int, default=25,
                     help='number of hidden units per layer (default: 25)')
-parser.add_argument('--seed', type=int, default=1111,
+parser.add_argument('--seed', type=int, default=-1,
                     help='random seed (default: 1111)')
 parser.add_argument('--permute', action='store_true',
                     help='use permuted MNIST (default: false)')
@@ -46,7 +47,9 @@ parser.add_argument('--modelname', default='model',
                     help='name used to save trained model')
 args = parser.parse_args()
 
-torch.manual_seed(args.seed)
+if args.seed > 0:
+    torch.manual_seed(args.seed)
+
 if torch.cuda.is_available():
     if not args.cuda:
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -129,6 +132,11 @@ def test():
 
 
 if __name__ == "__main__":
+    if args.savemodel:
+        fname = args.modelname + '_args.pkl'
+        pickle.dump(args, open(args.savedir / fname, 'wb'))
+    
+
     for epoch in range(1, epochs+1):
         train_loss = train(epoch)
         lowest_test_loss = None

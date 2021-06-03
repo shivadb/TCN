@@ -10,6 +10,7 @@ class TCN(nn.Module):
         num_channels = [25] * 8 if num_channels is None else num_channels
         self.tcn = TemporalConvNet(input_size, num_channels, kernel_size=kernel_size, dropout=dropout)
         self.linear = nn.Linear(num_channels[-1], output_size)
+        self.receptive_field = self.tcn.receptive_field
 
     def forward(self, inputs):
         """Inputs have to have dimension (N, C_in, L_in)"""
