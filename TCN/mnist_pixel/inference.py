@@ -32,7 +32,7 @@ model.eval()
 if args.cuda:
     model.cuda()
 
-model.fast_inference(args.batch_size)
+model.set_fast_inference(args.batch_size)
 
 def test():
     test_loss = 0
@@ -67,7 +67,7 @@ def single_test():
              # print(model.compare(data))
             orig_out = model(data)
             for i in range(data.size()[2]):
-                single_out = model.single_forward(data[:,:,i].view(data.size()[0], data.size()[1], 1))
+                single_out = model.inference(data[:,:,i].view(data.size()[0], data.size()[1], 1))
             
             model.reset_cache()
             print((single_out == orig_out).all().item())
@@ -111,7 +111,7 @@ def timing_tests():
             for i in range(data.size()[2]):
                 single_data = data[:,:,i].view(data.size()[0], data.size()[1], 1)
                 start = time.time()
-                single_out = model.single_forward(single_data)
+                single_out = model.inference(single_data)
                 total_single_time += time.time()-start
 
             

@@ -17,11 +17,12 @@ class CircularQueue(object):
         self.tensor = tensor # shape [B, CH, IN]
         self.index = torch.arange(self.tensor.size()[2]).to(tensor.device)
         self.roll = 0
+        self.input_size = tensor.size()[2]
 
     def __call__(self):
-        idx = (self.index + self.roll) % self.tensor.size()[2]
+        idx = (self.index + self.roll) % self.input_size
         return self.tensor.index_select(2, idx)
     
     def push(self, val):
-        self.tensor[:val.size()[0],:,self.roll] = val.squeeze(2)
-        self.roll = (self.roll + 1) % self.tensor.size()[2]
+        self.tensor[:val.size()[0],:,self.roll] = val.squeeze(2).detach()
+        self.roll = (self.roll + 1) % self.input_size
