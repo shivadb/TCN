@@ -30,16 +30,37 @@ from torch.nn.utils import weight_norm
 #         # self.cache[:x.size()[0],:,:] = torch.cat((self.cache[:x.size()[0],:,1:], x[:,:,:].detach()), dim=2)
 #         return self.cache
 
+# class TensorCache(nn.Module):
+#     def __init__(self, tensor, name):
+#         super(TensorCache, self).__init__()
+#         self.cache_name = name # shape [B, CH, IN]
+#         self.register_buffer(name, tensor, persistent=False)
+    
+#     def forward(self, x):
+#         cache_update = torch.cat((getattr(self, self.cache_name)[:,:,1:], x[:,:,:].detach()), dim=2)
+#         setattr(self, self.cache_name, cache_update)
+#         return getattr(self, self.cache_name)
+
+# class TensorCache(torch.jit.ScriptModule):
+#     def __init__(self, tensor, name):
+#         super(TensorCache, self).__init__()
+#         self.register_buffer('cache', tensor)
+    
+#     @torch.jit.script_method
+#     def forward(self, x):
+#         cache_update = torch.cat((self.cache[:,:,1:], x[:,:,:].detach()), dim=2)
+#         self.cache = cache_update
+#         return self.cache
+
 class TensorCache(nn.Module):
-    def __init__(self, tensor, name):
+    def __init__(self, tensor):
         super(TensorCache, self).__init__()
-        self.cache_name = name # shape [B, CH, IN]
-        self.register_buffer(name, tensor, persistent=False)
+        self.register_buffer('cache', tensor)
     
     def forward(self, x):
-        cache_update = torch.cat((getattr(self, self.cache_name)[:,:,1:], x[:,:,:].detach()), dim=2)
-        setattr(self, self.cache_name, cache_update)
-        return getattr(self, self.cache_name)
+        cache_update = torch.cat((self.cache[:,:,1:], x[:,:,:].detach()), dim=2)
+        self.cache = cache_update
+        return self.cache
 
 
 class TemporalInferenceBlock(nn.Module):
@@ -55,30 +76,32 @@ class TemporalInferenceBlock(nn.Module):
                                            stride=stride, padding=0, dilation=dilation))
         self.relu2 = nn.ReLU()
 
+        self.batch_size = batch_size
+
         self.cache1 = TensorCache(torch.zeros(
             batch_size, 
             self.conv1.in_channels, 
             (self.conv1.kernel_size[0]-1)*self.conv1.dilation[0] + 1
-            ), f'{block_num}_cache1')
+            ))
         
         self.cache2 = TensorCache(torch.zeros(
             batch_size, 
             self.conv2.in_channels, 
             (self.conv2.kernel_size[0]-1)*self.conv2.dilation[0] + 1
-            ), f'{block_num}_cache2')
+            ))
         
         self.stage1 = nn.Sequential(self.conv1, self.relu1)
         self.stage2 = nn.Sequential(self.conv2, self.relu2)
 
 
-        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else nn.Identity()
         self.relu = nn.ReLU()
         self.init_weights()
     
     def init_weights(self):
         self.conv1.weight.data.normal_(0, 0.01)
         self.conv2.weight.data.normal_(0, 0.01)
-        if self.downsample is not None:
+        if isinstance(self.downsample, nn.modules.conv.Conv1d):
             self.downsample.weight.data.normal_(0, 0.01)
 
     def reset_cache(self):
@@ -91,10 +114,12 @@ class TemporalInferenceBlock(nn.Module):
         '''
         x is of shape (B, CH, 1)
         '''
-        out = self.stage1(self.cache1(x)[:x.size()[0], :, :])
-        out = self.stage2(self.cache2(out)[:x.size()[0], :, :])
+        # out = self.stage1(self.cache1(x)[:x.size()[0], :, :])
+        # out = self.stage2(self.cache2(out)[:x.size()[0], :, :])
+        out = self.stage1(self.cache1(x))
+        out = self.stage2(self.cache2(out))
 
-        res = x if self.downsample is None else self.downsample(x)
+        res = self.downsample(x)
         # print(f'\t res shape: {res.size()}')
 
         return self.relu(out + res)
