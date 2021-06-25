@@ -60,7 +60,7 @@ class TensorCache(nn.Module):
     def forward(self, x):
         # assert x.size() == self.cache[:,:,0:1].size()
         cache_update = torch.cat((self.cache[:,:,1:], x.detach()), dim=2)
-        self.cache = cache_update
+        self.cache[:,:,:] = cache_update
         return self.cache
 
 
