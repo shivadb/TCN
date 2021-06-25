@@ -58,13 +58,14 @@ class TensorCache(nn.Module):
         self.register_buffer('cache', tensor)
     
     def forward(self, x):
-        cache_update = torch.cat((self.cache[:,:,1:], x[:,:,:].detach()), dim=2)
+        # assert x.size() == self.cache[:,:,0:1].size()
+        cache_update = torch.cat((self.cache[:,:,1:], x.detach()), dim=2)
         self.cache = cache_update
         return self.cache
 
 
 class TemporalInferenceBlock(nn.Module):
-    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, block_num, batch_size=1):
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, batch_size=1):
         super(TemporalInferenceBlock, self).__init__()
         self.in_ch, self.k, self.d = n_inputs, kernel_size, dilation
 
@@ -78,17 +79,17 @@ class TemporalInferenceBlock(nn.Module):
 
         self.batch_size = batch_size
 
-        self.cache1 = TensorCache(torch.zeros(
+        self.cache1 = torch.jit.script(TensorCache(torch.zeros(
             batch_size, 
             self.conv1.in_channels, 
             (self.conv1.kernel_size[0]-1)*self.conv1.dilation[0] + 1
-            ))
+            )))
         
-        self.cache2 = TensorCache(torch.zeros(
+        self.cache2 = torch.jit.script(TensorCache(torch.zeros(
             batch_size, 
             self.conv2.in_channels, 
             (self.conv2.kernel_size[0]-1)*self.conv2.dilation[0] + 1
-            ))
+            )))
         
         self.stage1 = nn.Sequential(self.conv1, self.relu1)
         self.stage2 = nn.Sequential(self.conv2, self.relu2)
@@ -137,7 +138,7 @@ class TCNInferenceNet(nn.Module):
             in_channels = num_inputs if i == 0 else num_channels[i-1]
             out_channels = num_channels[i]
             layers += [TemporalInferenceBlock(in_channels, out_channels, kernel_size, stride=1, 
-                                                dilation=dilation_size, batch_size=1, block_num=i)]
+                                                dilation=dilation_size, batch_size=1)]
             self.receptive_field += 2*(kernel_size-1)*dilation_size
         self.network = nn.Sequential(*layers)
 
