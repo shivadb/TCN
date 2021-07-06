@@ -11,30 +11,16 @@ class Chomp1d(nn.Module):
     def forward(self, x):
         return x[:, :, :-self.chomp_size].contiguous()
 
-# class TensorCache(nn.Module):
-#     def __init__(self, tensor):
-#         super(TensorCache, self).__init__()
-#         self.cache = tensor # shape [B, CH, IN]
-#         self.index = torch.arange(self.cache.size()[2]).to(tensor.device)
-#         self.roll = 0
-#         self.input_size = tensor.size()[2]
-    
-#     def forward(self, x):
-#         self.cache[:x.size()[0],:,self.roll] = x.squeeze(2).detach()
-#         self.roll = (self.roll + 1) % self.input_size
-#         idx = (self.index + self.roll) % self.input_size
-#         return self.cache.index_select(2, idx)
-
 
 class TensorCache(nn.Module):
     def __init__(self, tensor):
         super(TensorCache, self).__init__()
-        self.cache = tensor # shape [B, CH, IN]
+        self.register_buffer('cache', tensor)
     
     def forward(self, x):
-        cache_update = torch.cat((self.cache[:x.size()[0],:,1:], x[:,:,:].detach()), dim=2)
-        self.cache = torch.cat((cache_update, self.cache[x.size()[0]:, :, :]), dim=0)
-        # self.cache[:x.size()[0],:,:] = torch.cat((self.cache[:x.size()[0],:,1:], x[:,:,:].detach()), dim=2)
+        # assert x.size() == self.cache[:,:,0:1].size()
+        cache_update = torch.cat((self.cache[:,:,1:], x.detach()), dim=2)
+        self.cache[:,:,:] = cache_update
         return self.cache
 
 
