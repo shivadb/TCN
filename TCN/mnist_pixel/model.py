@@ -24,11 +24,11 @@ class TCN(nn.Module):
         """Inputs have to have dimension (N, C_in, L_in)"""
         if not self.inference_mode:
             y1 = self.tcn(inputs)  # input should have dimension (N, C, L)
-            # o = self.linear(y1[:, :, -1])
-            y1 =  torch.narrow(y1, 2, y1.size()[2]-1, 1).squeeze(2)
-            o = self.linear(y1)
-            # return F.log_softmax(o, dim=1)
-            return F.softmax(o, dim=1)
+            o = self.linear(y1[:, :, -1])
+            # y1 =  torch.narrow(y1, 2, y1.size()[2]-1, 1).squeeze(2)
+            # o = self.linear(y1)
+            return F.log_softmax(o, dim=1)
+            # return F.softmax(o, dim=1)
         else:
             y1 = self.tcn(inputs).squeeze(dim=2) # (N, C, 1)
             o = self.linear(y1)
