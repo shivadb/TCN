@@ -41,10 +41,10 @@ class TemporalTRTBlock(nn.Module):
 
 
     def forward(self, x):
-        s1 = self.relu1(self.conv1(x)[:,:,:-self.padding])
-        out = self.relu2(self.conv2(s1)[:,:,:-self.padding])
-        # s1 = self.relu1(self.trim(self.conv1(x)))
-        # out = self.relu2(self.trim(self.conv2(s1)))
+        # s1 = self.relu1(self.conv1(x)[:,:,:-self.padding])
+        # out = self.relu2(self.conv2(s1)[:,:,:-self.padding])
+        s1 = self.relu1(self.trim(self.conv1(x)))
+        out = self.relu2(self.trim(self.conv2(s1)))
         # out = self.net(x)
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)

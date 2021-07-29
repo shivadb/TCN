@@ -1,6 +1,7 @@
 import torch
 from torchvision import datasets, transforms
 import numpy as np
+import time
 
 
 def data_generator(root, batch_size, shuffle=False):
@@ -38,3 +39,17 @@ def augement_data(data, max_clip, max_pad=100):
         aug_data[:, :, :clip_size] = data[torch.randperm(batch_size), :, -clip_size:]
 
     return aug_data.to(data.device)
+
+def average_runtime(model, num_samples, verbose=True):
+    runtimes = []
+
+    for i in range(num_samples):
+        if i % 1000 == 0 and verbose: print(f'Finished running {i} samples')
+
+        x = torch.rand((1,1,28*28)).cuda()
+
+        start = time.time()
+        model(x)
+        runtimes.append(time.time() - start)
+    
+    return np.mean(runtimes)*1000

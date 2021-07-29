@@ -39,10 +39,10 @@ void printVec(std::vector <float> const &a) {
 
 int main(int argc, char const *argv[])
 {
-    // std::cout << "Hello World" << std::endl;
-    TRTUniquePtr< IRuntime > runtime {nullptr};
-    TRTUniquePtr< ICudaEngine > engine {nullptr};
-    TRTUniquePtr< IExecutionContext > context {nullptr};
+
+    TRTUniquePtr<IRuntime> runtime {nullptr};
+    TRTUniquePtr<ICudaEngine> engine {nullptr};
+    TRTUniquePtr<IExecutionContext> context {nullptr};
 
     std::ifstream engineFile(ENGINEPATH, std::ios::binary);
     if(!engineFile)
