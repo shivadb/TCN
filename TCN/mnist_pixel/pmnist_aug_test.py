@@ -5,7 +5,7 @@ import os, sys
 from pathlib import Path
 # sys.path.append("..\\..\\")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from TCN.mnist_pixel.utils import data_generator, augement_data
+from TCN.mnist_pixel.utils import data_generator, augment_data
 from TCN.mnist_pixel.model import TCN
 import numpy as np
 import argparse
@@ -90,7 +90,7 @@ def train(ep):
         if args.permute:
             data = data[:, :, permute]
         if args.seq_augment:
-            data = augement_data(data, max_clip=model.receptive_field//4)
+            data = augment_data(data, max_clip=model.receptive_field//4)
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
-# from .utils import TensorQueue, CircularQueue
+from .utils import TensorQueue, CircularQueue
 
 # class TensorCache(nn.Module):
 #     def __init__(self, tensor):
@@ -90,6 +90,18 @@ class TemporalInferenceBlock(nn.Module):
             self.conv2.in_channels, 
             (self.conv2.kernel_size[0]-1)*self.conv2.dilation[0] + 1
             )))
+
+        # self.cache1 = CircularQueue(torch.zeros(
+        #     batch_size, 
+        #     self.conv1.in_channels, 
+        #     (self.conv1.kernel_size[0]-1)*self.conv1.dilation[0] + 1
+        # ).cuda())
+        
+        # self.cache2 = CircularQueue(torch.zeros(
+        #     batch_size, 
+        #     self.conv2.in_channels, 
+        #     (self.conv2.kernel_size[0]-1)*self.conv2.dilation[0] + 1
+        # ).cuda())
         
         self.stage1 = nn.Sequential(self.conv1, self.relu1)
         self.stage2 = nn.Sequential(self.conv2, self.relu2)
@@ -115,10 +127,13 @@ class TemporalInferenceBlock(nn.Module):
         '''
         x is of shape (B, CH, 1)
         '''
-        # out = self.stage1(self.cache1(x)[:x.size()[0], :, :])
-        # out = self.stage2(self.cache2(out)[:x.size()[0], :, :])
         out = self.stage1(self.cache1(x))
         out = self.stage2(self.cache2(out))
+
+        # self.cache1.push(x)
+        # out = self.stage1(self.cache1())
+        # self.cache2.push(out)
+        # out = self.stage2(self.cache2())
 
         res = self.downsample(x)
         # print(f'\t res shape: {res.size()}')

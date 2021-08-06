@@ -21,7 +21,10 @@ parser.add_argument('--applymax', action='store_true',
 parser.add_argument('--fp16', action='store_true',
     help='Use half precision floats')
 
-# python convert_trt.py --mdlname aug_k7l6 
+# python convert_trt.py --mdlname aug_k7l6 --applymax
+# python convert_trt.py --mdlname aug_k7l6 --applymax --fp16
+# python convert_trt.py --mdlname aug_k7l6 --applymax --onnx
+# python convert_trt.py --mdlname aug_k7l6 --applymax --onnx --fp16
 
 # Converter for argmax wrapper
 @tensorrt_converter('TCN.mnist_pixel.model.trt_argmax')
@@ -66,6 +69,10 @@ if __name__ == '__main__':
     print('Successfully loaded torch model')
 
     x = torch.rand((1,1,28*28)).cuda()
+
+    if args.fp16:
+        model = model.half()
+        x = x.half()
 
     model_trt = torch2trt(model, [x], use_onnx=args.onnx, fp16=args.fp16)
     print('Successfully converted model to TensorRT engine')
