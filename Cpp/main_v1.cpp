@@ -21,7 +21,7 @@
 #define NUMSAMPLES 10000
 #define FP16 false
 #define INTYPE "zero" //one of "regular", "pinned", or "zero"
-#define OUTTYPE "zero" //one of "regular" or "zero"
+#define OUTTYPE "regular" //one of "regular" or "zero"
 
 using namespace nvinfer1;
 // using namespace sample;
@@ -34,22 +34,20 @@ struct TRTDestroy {
     }
 };
 
-template<typename T>
 struct gen_rand { 
-    T range;
+    float range;
 public:
-    gen_rand(T r=1.0) : range(r) {}
-    T operator()() { 
-        return (rand()/(T)RAND_MAX) * range;
+    gen_rand(float r=1.0) : range(r) {}
+    float operator()() { 
+        return (rand()/(float)RAND_MAX) * range;
     }
 };
 
-template<>
-struct gen_rand<__half> {
+struct gen_half_rand { 
     __half range;
 public:
-    gen_rand(__half r = __float2half(1.0)) : range(r) {}
-    __half operator()() {
+    gen_half_rand(__half r= __float2half(1.0)) : range(r) {}
+    __half operator()() { 
         return (__float2half(rand())/__double2half(RAND_MAX)) * range;
     }
 };
@@ -65,39 +63,24 @@ void printVec(std::vector <T> const &a) {
    std::cout << std::endl;
 }
 
-template<typename T>
-std::vector<T> initializeVec(int l, float val)
-{
-    std::vector<T> vec(l, val);
-    return vec;
-}
-
-template <> 
-std::vector<__half> initializeVec<__half>(int l, float val) 
-{
-    std::vector<__half> vec(l, __float2half(val));
-    return vec;
-}
-
-template<typename T>
 void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int outputIndex)
 {
     std::vector<int> output(1, 0);
-    std::vector<T> testInput = initializeVec<T>(784, 0);
+    std::vector<float> testInput(784, 0);
 
-    T* pinnedTestInput;
-    cudaMallocHost((void **) &pinnedTestInput, 784 * sizeof(T));
+    float* pinnedTestInput;
+    cudaMallocHost((void **) &pinnedTestInput, 784 * sizeof(float));
 
     void* buffers[2];
 
     if (INTYPE == "zero")
     {
         std::cout << "Using zerocopy input buffer" << std::endl;
-        cudaHostAlloc(&buffers[inputIndex], 784 * sizeof(T), cudaHostAllocWriteCombined);
+        cudaHostAlloc(&buffers[inputIndex], 784 * sizeof(float), cudaHostAllocWriteCombined);
     }
     else
     {
-        cudaMalloc(&buffers[inputIndex], 784 * sizeof(T));
+        cudaMalloc(&buffers[inputIndex], 784 * sizeof(float));
     }
     
 
@@ -124,17 +107,17 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     {
         float elapsedTime;
 
-        std::generate_n(testInput.begin(), 784, gen_rand<T>());
+        std::generate_n(testInput.begin(), 784, gen_rand());
 
         cudaEventRecord(start, stream);
 
         if (INTYPE == "regular")
         {
-            cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(T), cudaMemcpyHostToDevice, stream);
+            cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(float), cudaMemcpyHostToDevice, stream);
         }
         else if (INTYPE == "pinned")
         {
-            cudaMemcpyAsync(buffers[inputIndex], pinnedTestInput, 784 * sizeof(T), cudaMemcpyHostToDevice, stream);
+            cudaMemcpyAsync(buffers[inputIndex], pinnedTestInput, 784 * sizeof(float), cudaMemcpyHostToDevice, stream);
         }
         context->enqueue(1, buffers, stream, nullptr);
 
@@ -181,26 +164,98 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     }
 }
 
-template<typename T>
-void verifyOutput(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int outputIndex, T testValue)
+// void testRuntimeFP16(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int outputIndex)
+// {
+//     std::vector<int> output(1, 0);
+//     std::vector<__half>testInput(784, __float2half(0));
+//     void* buffers[2];
+
+//     cudaMalloc(&buffers[inputIndex], 784 * sizeof(__half));
+
+//     if (!DMA)
+//     {
+//         std::cout << "Not using DMA" << std::endl;
+//         cudaMalloc(&buffers[outputIndex], 1 * sizeof(int));
+//     }
+//     else
+//     {
+//         std::cout << "Using DMA" << std::endl;
+//         cudaHostAlloc(&buffers[outputIndex], 1*sizeof(int), cudaHostAllocDefault);
+//     }
+    
+//     cudaStream_t stream;
+//     cudaStreamCreate(&stream);
+//     cudaEvent_t start;
+//     cudaEventCreate(&start);
+//     cudaEvent_t end;
+//     cudaEventCreate(&end);
+//     float totalTime = 0.0;
+
+//     for (int i = 0; i < NUMSAMPLES; ++i)
+//     {
+//         float elapsedTime;
+
+//         std::generate_n(testInput.begin(), 784, gen_half_rand());
+
+//         cudaEventRecord(start, stream);
+
+//         cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(__half), cudaMemcpyHostToDevice, stream);
+//         context->enqueue(1, buffers, stream, nullptr);
+
+//         if (!DMA)
+//         {
+//             cudaMemcpyAsync(output.data(), buffers[outputIndex], 1 * sizeof(int), cudaMemcpyDeviceToHost, stream);
+//         }
+
+//         cudaEventRecord(end, stream);
+//         cudaStreamSynchronize(stream);
+//         cudaEventElapsedTime(&elapsedTime, start, end);
+
+//         totalTime += elapsedTime;
+
+//         if (i % 1000 == 0)
+//         {
+//             std::cout << "Finished running " << i << " samples" << std::endl;
+//         }
+//     }
+
+//     std::cout << "Average inference time per sample: " << totalTime/NUMSAMPLES << "ms" << std::endl;
+
+//     cudaStreamDestroy(stream);
+//     cudaFree(buffers[inputIndex]);
+//     cudaEventDestroy(start);
+//     cudaEventDestroy(end);
+
+//     if (!DMA)
+//     {
+//         cudaFree(buffers[outputIndex]);
+//     }
+//     else
+//     {
+//         cudaFreeHost(buffers[outputIndex]);
+//     }
+    
+// }
+
+void verifyOutput(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int outputIndex, float testValue)
 {
     std::vector<int> output(1, 0);
-    std::vector<T> testInput(784, testValue);
+    std::vector<float> testInput(784, testValue);
     void* buffers[2];
 
-    T* pinnedTestInput;
-    cudaMallocHost((void **) &pinnedTestInput, 784 * sizeof(T));
+    float* pinnedTestInput;
+    cudaMallocHost((void **) &pinnedTestInput, 784 * sizeof(float));
     for (int i=0; i<784; i++) pinnedTestInput[i] = testValue;
 
     if (INTYPE == "zero")
     {
         std::cout << "Using zerocopy input buffer" << std::endl;
-        cudaHostAlloc(&buffers[inputIndex], 784 * sizeof(T), cudaHostAllocWriteCombined);
-        for (int i=0; i<784; i++) ((T*)buffers[inputIndex])[i] = testValue;
+        cudaHostAlloc(&buffers[inputIndex], 784 * sizeof(float), cudaHostAllocWriteCombined);
+        for (int i=0; i<784; i++) ((float*)buffers[inputIndex])[i] = testValue;
     }
     else
     {
-        cudaMalloc(&buffers[inputIndex], 784 * sizeof(T));
+        cudaMalloc(&buffers[inputIndex], 784 * sizeof(float));
     }
     
 
@@ -221,13 +276,18 @@ void verifyOutput(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int 
     
     if (INTYPE == "regular")
     {
-        cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(T), cudaMemcpyHostToDevice, stream);
+        cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(float), cudaMemcpyHostToDevice, stream);
     }
     else if (INTYPE == "pinned")
     {
-        cudaMemcpyAsync(buffers[inputIndex], pinnedTestInput, 784 * sizeof(T), cudaMemcpyHostToDevice, stream);
+        cudaMemcpyAsync(buffers[inputIndex], pinnedTestInput, 784 * sizeof(float), cudaMemcpyHostToDevice, stream);
     }
     context->enqueue(1, buffers, stream, nullptr);
+
+    if (OUTTYPE != "zero")
+    {
+        cudaMemcpyAsync(output.data(), buffers[outputIndex], 1 * sizeof(int), cudaMemcpyDeviceToHost, stream);
+    }
 
     if (OUTTYPE == "zero")
     {
@@ -263,6 +323,56 @@ void verifyOutput(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int 
     }
 
 }
+
+// void verifyOutputFP16(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int outputIndex, float testValue)
+// {
+//     std::vector<int> output(1, 0);
+//     std::vector<__half>testInput(784, __float2half(testValue));
+//     void* buffers[2];
+
+//     cudaMalloc(&buffers[inputIndex], 784 * sizeof(__half));
+
+//     if (!DMA)
+//     {
+//         std::cout << "Not using DMA" << std::endl;
+//         cudaMalloc(&buffers[outputIndex], 1 * sizeof(int));
+//     }
+//     else
+//     {
+//         std::cout << "Using DMA" << std::endl;
+//         cudaHostAlloc(&buffers[outputIndex], 1*sizeof(int), cudaHostAllocDefault);
+//     }
+    
+//     cudaStream_t stream;
+//     cudaStreamCreate(&stream);
+
+//     cudaMemcpyAsync(buffers[inputIndex], testInput.data(), 784 * sizeof(__half), cudaMemcpyHostToDevice, stream);
+//     context->enqueue(1, buffers, stream, nullptr);
+
+//     if (!DMA)
+//     {
+//         cudaMemcpyAsync(output.data(), buffers[outputIndex], 1 * sizeof(int), cudaMemcpyDeviceToHost, stream);
+//         cudaStreamSynchronize(stream);
+//         printVec(output);
+//     }
+//     else{
+//         cudaStreamSynchronize(stream);
+//         std::cout << ((int*)buffers[outputIndex])[0] << std::endl;
+//     }
+
+//     cudaStreamDestroy(stream);
+//     cudaFree(buffers[inputIndex]);
+
+//     if (!DMA)
+//     {
+//         cudaFree(buffers[outputIndex]);
+//     }
+//     else
+//     {
+//         cudaFreeHost(buffers[outputIndex]);
+//     }
+
+// }
 
 int main(int argc, char const *argv[])
 {
@@ -312,18 +422,17 @@ int main(int argc, char const *argv[])
 
     if (FP16)
     {
-        std::cout << "fp16" << std::endl;
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0));
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0.1));
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(1));
-        testRuntime<__half>(context, inputIndex, outputIndex);
+        // verifyOutputFP16(context, inputIndex, outputIndex, 0);
+        // verifyOutputFP16(context, inputIndex, outputIndex, 0.1);
+        // verifyOutputFP16(context, inputIndex, outputIndex, 1);
+        // testRuntimeFP16(context, inputIndex, outputIndex);
     }
     else
     {
-        verifyOutput<float>(context, inputIndex, outputIndex, 0);
-        verifyOutput<float>(context, inputIndex, outputIndex, 0.1);
-        verifyOutput<float>(context, inputIndex, outputIndex, 1);
-        testRuntime<float>(context, inputIndex, outputIndex);
+        verifyOutput(context, inputIndex, outputIndex, 0);
+        verifyOutput(context, inputIndex, outputIndex, 0.1);
+        verifyOutput(context, inputIndex, outputIndex, 1);
+        testRuntime(context, inputIndex, outputIndex);
     }
 
     return 0;

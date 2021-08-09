@@ -74,7 +74,7 @@ if __name__ == '__main__':
         model = model.half()
         x = x.half()
 
-    model_trt = torch2trt(model, [x], use_onnx=args.onnx, fp16=args.fp16)
+    model_trt = torch2trt(model, [x], strict_type_constraints=True, use_onnx=args.onnx, fp16=args.fp16)
     print('Successfully converted model to TensorRT engine')
 
     mdl_trt_name = args.mdlname + '_trt'
