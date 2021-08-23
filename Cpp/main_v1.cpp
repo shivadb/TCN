@@ -16,10 +16,10 @@
 // #include "sampleUtils.h"
 #include "logger.h"
 
-#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
+#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax_fp16.engine"
 #define DLACore -1
 #define NUMSAMPLES 10000
-#define FP16 false
+#define FP16 true
 #define INTYPE "zero" //one of "regular", "pinned", or "zero"
 #define OUTTYPE "regular" //one of "regular" or "zero"
 

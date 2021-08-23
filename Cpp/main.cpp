@@ -18,10 +18,10 @@
 
 #define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
 #define DLACore -1
-#define NUMSAMPLES 10000
+#define NUMSAMPLES 25000
 #define FP16 false
-#define INTYPE "zero" //one of "regular", "pinned", or "zero"
-#define OUTTYPE "zero" //one of "regular" or "zero"
+#define INTYPE "regualr" //one of "regular", "pinned", or "zero"
+#define OUTTYPE "regular" //one of "regular" or "zero"
 
 using namespace nvinfer1;
 // using namespace sample;
@@ -124,7 +124,7 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     {
         float elapsedTime;
 
-        std::generate_n(testInput.begin(), 784, gen_rand<T>());
+        // std::generate_n(testInput.begin(), 784, gen_rand<T>());
 
         cudaEventRecord(start, stream);
 
@@ -144,7 +144,7 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
         }
 
         cudaEventRecord(end, stream);
-        cudaStreamSynchronize(stream);
+        // cudaStreamSynchronize(stream);
         cudaEventElapsedTime(&elapsedTime, start, end);
 
         totalTime += elapsedTime;
@@ -168,7 +168,7 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     }
     else
     {
-        cudaFree(buffers[inputIndex]);
+        4444
     }
     
     if (OUTTYPE == "zero")
@@ -313,16 +313,16 @@ int main(int argc, char const *argv[])
     if (FP16)
     {
         std::cout << "fp16" << std::endl;
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0));
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0.1));
-        verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(1));
+        // verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0));
+        // verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(0.1));
+        // verifyOutput<__half>(context, inputIndex, outputIndex, __float2half(1));
         testRuntime<__half>(context, inputIndex, outputIndex);
     }
     else
     {
-        verifyOutput<float>(context, inputIndex, outputIndex, 0);
-        verifyOutput<float>(context, inputIndex, outputIndex, 0.1);
-        verifyOutput<float>(context, inputIndex, outputIndex, 1);
+        // verifyOutput<float>(context, inputIndex, outputIndex, 0);
+        // verifyOutput<float>(context, inputIndex, outputIndex, 0.1);
+        // verifyOutput<float>(context, inputIndex, outputIndex, 1);
         testRuntime<float>(context, inputIndex, outputIndex);
     }
 
