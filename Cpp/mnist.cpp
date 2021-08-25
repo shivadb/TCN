@@ -14,7 +14,7 @@
 
 #define DLACore -1
 #define IMGSIZE 784
-#define OUTBUFFERLEN 10
+#define OUTBUFFERLEN 100
 #define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
 #define FP16 false
 
@@ -172,7 +172,7 @@ int main(int argc, char const *argv[])
 
     cout << "Number of Images: " << num_images << ", Image Size: " << img_size << ", Number of Labels: " << num_labels << endl;
     
-    float** normalizedData = charToFloatArr(ds, 10);
+    float** normalizedData = charToFloatArr(ds, OUTBUFFERLEN);
     // printDigit(ds[0]);
     // printNormalizedDigit(normalizedData[0]);
 
@@ -233,23 +233,41 @@ int main(int argc, char const *argv[])
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    for (int i = 0; i < 10; i++)
+    cudaEvent_t start;
+    cudaEventCreate(&start);
+    cudaEvent_t end;
+    cudaEventCreate(&end);
+
+    float elapsedTime;
+
+    cudaEventRecord(start, stream);
+
+    for (int i = 0; i < OUTBUFFERLEN; i++)
     {
-        for (int j=0; j<IMGSIZE; j++) pinnedInput[j] = normalizedData[i][j];
+        // for (int j=0; j<IMGSIZE; j++) pinnedInput[j] = normalizedData[i][j];
+        copy(normalizedData[i], normalizedData[i] + IMGSIZE, pinnedInput);
 
-        cout << "True Label: " << (int)lbls[i] << endl;
+        // cout << "True Label: " << (int)lbls[i] << endl;
 
-        buffers[outputIndex] = &outputs[i];
+        // buffers[outputIndex] = &outputs[i];
+        buffers[outputIndex] = outputs + i;
 
         cudaMemcpyAsync(buffers[inputIndex], pinnedInput, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
         context->enqueue(1, buffers, stream, nullptr);
 
-        cudaStreamSynchronize(stream);
     }
+    cudaStreamSynchronize(stream);
+    cudaEventRecord(end, stream);
+    cudaEventElapsedTime(&elapsedTime, start, end);
 
+    cout << "Output: " << endl;
     for (int i = 0; i < OUTBUFFERLEN; i++) cout << outputs[i] << " ";
     cout << endl;
     
+    std::cout << "Average inference time per image: " << elapsedTime/OUTBUFFERLEN << "ms" << std::endl;
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(end);
     cudaStreamDestroy(stream);
     cudaFreeHost(pinnedInput);
     cudaFree(buffers[inputIndex]);

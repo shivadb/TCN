@@ -16,12 +16,12 @@
 // #include "sampleUtils.h"
 #include "logger.h"
 
-#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
+#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax_fp16.engine"
 #define DLACore -1
 #define NUMSAMPLES 25000
-#define FP16 false
-#define INTYPE "regualr" //one of "regular", "pinned", or "zero"
-#define OUTTYPE "regular" //one of "regular" or "zero"
+#define FP16 true
+#define INTYPE "pinned" //one of "regular", "pinned", or "zero"
+#define OUTTYPE "zero" //one of "regular" or "zero"
 
 using namespace nvinfer1;
 // using namespace sample;
@@ -119,14 +119,16 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     cudaEvent_t end;
     cudaEventCreate(&end);
     float totalTime = 0.0;
-
+    
+    float elapsedTime;
+    cudaEventRecord(start, stream);
     for (int i = 0; i < NUMSAMPLES; ++i)
     {
-        float elapsedTime;
+        // float elapsedTime;
 
         // std::generate_n(testInput.begin(), 784, gen_rand<T>());
 
-        cudaEventRecord(start, stream);
+        // cudaEventRecord(start, stream);
 
         if (INTYPE == "regular")
         {
@@ -143,19 +145,22 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
             cudaMemcpyAsync(output.data(), buffers[outputIndex], 1 * sizeof(int), cudaMemcpyDeviceToHost, stream);
         }
 
-        cudaEventRecord(end, stream);
+        // cudaEventRecord(end, stream);
         // cudaStreamSynchronize(stream);
-        cudaEventElapsedTime(&elapsedTime, start, end);
+        // cudaEventElapsedTime(&elapsedTime, start, end);
 
-        totalTime += elapsedTime;
+        // totalTime += elapsedTime;
 
         if (i % 1000 == 0)
         {
             std::cout << "Finished running " << i << " samples" << std::endl;
         }
     }
+    cudaStreamSynchronize(stream);
+    cudaEventRecord(end, stream);
+    cudaEventElapsedTime(&elapsedTime, start, end);
 
-    std::cout << "Average inference time per sample: " << totalTime/NUMSAMPLES << "ms" << std::endl;
+    std::cout << "Average inference time per sample: " << elapsedTime/NUMSAMPLES << "ms" << std::endl;
 
     cudaStreamDestroy(stream);
     cudaEventDestroy(start);
@@ -168,7 +173,7 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     }
     else
     {
-        4444
+        cudaFree(buffers[inputIndex]);
     }
     
     if (OUTTYPE == "zero")
