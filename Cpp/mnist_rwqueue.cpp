@@ -12,13 +12,14 @@
 #include <NvInferRuntimeCommon.h>
 
 #include "logger.h"
+#include "readerwriterqueue.h"
 
 #define DLACore -1
 #define IMGSIZE 784
-#define OUTBUFFERLEN 10000
+#define OUTBUFFERLEN 10
 #define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
 #define FP16 false
-#define PRINTOUT false
+#define PRINTOUT true
 
 using namespace nvinfer1;
 using namespace std;
@@ -35,6 +36,32 @@ struct TRTDestroy {
 template< class T >
 using TRTUniquePtr = std::unique_ptr< T, TRTDestroy >;
 
+class MNISTTRTBuffer {
+    public:
+        void* buffers[2];
+        int inputIndex;
+        int outputIndex;
+
+        MNISTTRTBuffer(int inTRTIdx, int outTRTIdx, int* outBufferAddr){
+            inputIndex = inTRTIdx;
+            outputIndex = outTRTIdx;
+            cudaMalloc(&buffers[inputIndex], IMGSIZE*sizeof(float));
+            buffers[outputIndex] = outBufferAddr;
+        }
+
+        void updateOutBufferAddr(int* outBufferAddr){
+            buffers[outputIndex] = outBufferAddr;
+        }
+
+        void* getInBufferPtr(){
+            return buffers[inputIndex];
+        }
+
+        ~MNISTTRTBuffer() {
+            cudaFree(buffers[inputIndex]);
+        }
+        
+};
 
 uchar** read_mnist_images(string full_path, int& number_of_images, int& image_size) {
     auto reverseInt = [](int i) {
@@ -190,7 +217,7 @@ int main(int argc, char const *argv[])
 
     cout << "Number of Images: " << num_images << ", Image Size: " << img_size << ", Number of Labels: " << num_labels << endl;
     
-    float** normalizedData = charToFloatArr(ds, OUTBUFFERLEN);
+    // float** normalizedData = charToFloatArr(ds, OUTBUFFERLEN);
     float* pinnedNormData = charToFloatPinnedArr(ds, OUTBUFFERLEN);
     // printDigit(ds[0]);
     // printNormalizedDigit(normalizedData[0]);
@@ -243,44 +270,44 @@ int main(int argc, char const *argv[])
     int* outputs;
     cudaHostAlloc((void**) &outputs, OUTBUFFERLEN*sizeof(int), cudaHostAllocMapped);
 
-    float* pinnedInput;
-    cudaMallocHost((void **) &pinnedInput, IMGSIZE * sizeof(float));
+    // float* pinnedInput;
+    // cudaMallocHost((void **) &pinnedInput, IMGSIZE * sizeof(float));
 
-    void* buffers[2];
-    cudaMalloc(&buffers[inputIndex], IMGSIZE*sizeof(float));
+    // void* buffers[2];
+    // cudaMalloc(&buffers[inputIndex], IMGSIZE*sizeof(float));
+    // MNISTTRTBuffer trtBuffer(inputIndex, outputIndex, nullptr);
+
+    MNISTTRTBuffer* trtBuffer;
+    moodycamel::ReaderWriterQueue<MNISTTRTBuffer*> trtBufferQueue(4);
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    // cudaEvent_t start;
-    // cudaEventCreate(&start);
-    // cudaEvent_t end;
-    // cudaEventCreate(&end);
-
-    // float elapsedTime;
-    // cudaEventRecord(start, stream);
     cout << "Started Running Samples" << endl;
     auto start = chrono::high_resolution_clock::now();
     for (int i = 0; i < OUTBUFFERLEN; i++)
     {
-        // copy(normalizedData[i], normalizedData[i] + IMGSIZE, pinnedInput);
+        cout << "True Label: " << (int)lbls[i] << endl;
 
-        // cout << "True Label: " << (int)lbls[i] << endl;
+        MNISTTRTBuffer *currBuffer = new MNISTTRTBuffer(inputIndex, outputIndex, outputs+i);
+        cout << currBuffer->getInBufferPtr() << " " << currBuffer->buffers[outputIndex] << endl;
+        trtBufferQueue.try_enqueue(currBuffer);
 
-        // buffers[outputIndex] = &outputs[i];
-        buffers[outputIndex] = outputs + i;
+        trtBufferQueue.try_dequeue(trtBuffer);
+        cout << trtBuffer->getInBufferPtr() << " " << trtBuffer->buffers[outputIndex] << endl;
 
-        // cudaMemcpyAsync(buffers[inputIndex], pinnedInput, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
-        cudaMemcpyAsync(buffers[inputIndex], pinnedNormData + IMGSIZE*i, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
+        cout << endl;
 
-        context->enqueue(1, buffers, stream, nullptr);
+        // cudaMemcpyAsync(buffers[inputIndex], pinnedNormData + IMGSIZE*i, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
+        cudaMemcpyAsync(trtBuffer->getInBufferPtr(), pinnedNormData + IMGSIZE*i, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
+        context->enqueue(1, trtBuffer->buffers, stream, nullptr);
+
+        delete trtBuffer;
 
     }
     cudaStreamSynchronize(stream);
     auto end = chrono::high_resolution_clock::now();
     chrono::duration<double, std::milli> elapsedTime = end - start;
-    // cudaEventRecord(end, stream);
-    // cudaEventElapsedTime(&elapsedTime, start, end);
 
     if (PRINTOUT)
     {
@@ -291,12 +318,10 @@ int main(int argc, char const *argv[])
     
     std::cout << "Average inference time per image: " << elapsedTime.count()/OUTBUFFERLEN << "ms" << std::endl;
 
-    // cudaEventDestroy(start);
-    // cudaEventDestroy(end);
     cudaStreamDestroy(stream);
-    cudaFreeHost(pinnedInput);
+    // cudaFreeHost(pinnedInput);
     cudaFreeHost(pinnedNormData);
-    cudaFree(buffers[inputIndex]);
+    // cudaFree(buffers[inputIndex]);
     cudaFreeHost(outputs);
 
     return 0;

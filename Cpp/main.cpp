@@ -2,6 +2,7 @@
 #include <fstream>
 #include <random>
 #include <vector>
+#include <chrono>
 #include <algorithm>
 #include <typeinfo>
 #include <cuda_runtime_api.h>
@@ -16,10 +17,10 @@
 // #include "sampleUtils.h"
 #include "logger.h"
 
-#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax_fp16.engine"
+#define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
 #define DLACore -1
 #define NUMSAMPLES 25000
-#define FP16 true
+#define FP16 false
 #define INTYPE "pinned" //one of "regular", "pinned", or "zero"
 #define OUTTYPE "zero" //one of "regular" or "zero"
 
@@ -114,14 +115,18 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
     
     cudaStream_t stream;
     cudaStreamCreate(&stream);
-    cudaEvent_t start;
-    cudaEventCreate(&start);
-    cudaEvent_t end;
-    cudaEventCreate(&end);
-    float totalTime = 0.0;
+
+    // cudaEvent_t start;
+    // cudaEventCreate(&start);
+    // cudaEvent_t end;
+    // cudaEventCreate(&end);
+    // float totalTime = 0.0;
     
-    float elapsedTime;
-    cudaEventRecord(start, stream);
+    // float elapsedTime;
+    // cudaEventRecord(start, stream);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < NUMSAMPLES; ++i)
     {
         // float elapsedTime;
@@ -157,14 +162,16 @@ void testRuntime(TRTUniquePtr<IExecutionContext> &context, int inputIndex, int o
         }
     }
     cudaStreamSynchronize(stream);
-    cudaEventRecord(end, stream);
-    cudaEventElapsedTime(&elapsedTime, start, end);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> elapsedTime = end - start;
+    // cudaEventRecord(end, stream);
+    // cudaEventElapsedTime(&elapsedTime, start, end);
 
-    std::cout << "Average inference time per sample: " << elapsedTime/NUMSAMPLES << "ms" << std::endl;
+    std::cout << "Average inference time per sample: " << elapsedTime.count()/NUMSAMPLES << "ms" << std::endl;
 
     cudaStreamDestroy(stream);
-    cudaEventDestroy(start);
-    cudaEventDestroy(end);
+    // cudaEventDestroy(start);
+    // cudaEventDestroy(end);
     cudaFreeHost(pinnedTestInput);
 
     if (INTYPE == "zero")
