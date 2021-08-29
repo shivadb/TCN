@@ -46,8 +46,6 @@ class MNISTTRTBuffer {
         int inputIndex;
         int outputIndex;
 
-        MNISTTRTBuffer () {}
-
         MNISTTRTBuffer(int inTRTIdx, int outTRTIdx, int* outBufferAddr){
             inputIndex = inTRTIdx;
             outputIndex = outTRTIdx;
@@ -251,6 +249,7 @@ void HDDtoPinned (moodycamel::BlockingReaderWriterCircularBuffer<int>& avPinQ,
         copy(normalizedData[i], normalizedData[i] + IMGSIZE, pinCpyBuffers[pinBufferID].pinnedArr);
         pinCpyBuffers[pinBufferID].inIdx = i;
         rePinQ.wait_enqueue(pinBufferID);
+        i = idx++;
     }
 }
 
@@ -259,50 +258,46 @@ void PinnedtoCuda (moodycamel::BlockingReaderWriterCircularBuffer<int>& avPinQ,
                  moodycamel::BlockingReaderWriterCircularBuffer<int>& avTRTQ,
                  moodycamel::BlockingReaderWriterCircularBuffer<int>& reTRTQ,
                  PinnedCopyBuffer pinCpyBuffers[],
-                 MNISTTRTBuffer trtBuffers[],
+                 MNISTTRTBuffer* trtBuffers[],
+                 int* outputs,
+                 cudaEvent_t cpyComplete[],
                  atomic<int>& idx, 
                  cudaStream_t stream){
     
     int pinBufferID;
     int trtBufferID;
     int i = idx++;
-    cudaEvent_t finishCpy;
-    cuda
     while (i < OUTBUFFERLEN){
         rePinQ.wait_dequeue(pinBufferID);
         avTRTQ.wait_dequeue(trtBufferID);
-        cudaMemcpyAsync(trtBuffers[trtBufferID].getInBufferPtr(), pinCpyBuffers[pinBufferID].pinnedArr, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
-        
+        cudaMemcpyAsync(trtBuffers[trtBufferID]->getInBufferPtr(), pinCpyBuffers[pinBufferID].pinnedArr, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
+        trtBuffers[trtBufferID]->updateOutBufferAddr(outputs + pinCpyBuffers[pinBufferID].inIdx);
+        cudaEventRecord(cpyComplete[trtBufferID], stream);
+        cudaEventSynchronize(cpyComplete[trtBufferID]);
+        avPinQ.try_enqueue(pinBufferID);
+        reTRTQ.wait_enqueue(trtBufferID);
+        i = idx++;
     }
-
 }
 
-// void trtBufferGen(moodycamel::BlockingReaderWriterCircularBuffer<MNISTTRTBuffer*>& inq, int inputIndex, int outputIndex, int* outputs, int numSamples) {
-//     for (int i = 0; i < numSamples; i++)
-//     {
-//         MNISTTRTBuffer *currBuffer = new MNISTTRTBuffer(inputIndex, outputIndex, outputs+i);
-//         inq.wait_enqueue(currBuffer);
-//     }
-// }
+void executeTRT( moodycamel::BlockingReaderWriterCircularBuffer<int>& avTRTQ,
+                 moodycamel::BlockingReaderWriterCircularBuffer<int>& reTRTQ,
+                 MNISTTRTBuffer* trtBuffers[],
+                 cudaEvent_t inpConsumed[],
+                 TRTUniquePtr<IExecutionContext>& context,
+                 atomic<int>& idx, 
+                 cudaStream_t stream) {
 
-// void trtDataTransfer(moodycamel::BlockingReaderWriterCircularBuffer<MNISTTRTBuffer*>& inq, moodycamel::BlockingReaderWriterCircularBuffer<MNISTTRTBuffer*>& exq, float* pinnedNormData, cudaStream_t stream, int numSamples) {
-//     MNISTTRTBuffer* trtBuffer;
-//     for (int i = 0; i < numSamples; i++)
-//     {
-//         inq.wait_dequeue(trtBuffer);
-//         cudaMemcpyAsync(trtBuffer->getInBufferPtr(), pinnedNormData + IMGSIZE*i, IMGSIZE*sizeof(float), cudaMemcpyHostToDevice, stream);
-//         exq.wait_enqueue(trtBuffer);
-//     }
-// }
-
-// void trtExecute(moodycamel::BlockingReaderWriterCircularBuffer<MNISTTRTBuffer*>& exq, TRTUniquePtr<IExecutionContext>& context,  cudaStream_t stream, int numSamples){
-//     MNISTTRTBuffer* trtBuffer;
-//     for (int i = 0; i < numSamples; i++){
-//         exq.wait_dequeue(trtBuffer);
-//         context->enqueue(1, trtBuffer->buffers, stream, nullptr);
-//         delete trtBuffer;
-//     }
-// }
+    int i = idx++;
+    int trtBufferID;
+    while (i < OUTBUFFERLEN){
+        reTRTQ.wait_dequeue(trtBufferID);
+        context->enqueue(1, trtBuffers[trtBufferID]->buffers, stream, inpConsumed + trtBufferID);
+        cudaEventSynchronize(inpConsumed[trtBufferID]);
+        avTRTQ.try_enqueue(trtBufferID);
+        i = idx++;
+    }
+}
 
 int main(int argc, char const *argv[])
 {
@@ -371,7 +366,7 @@ int main(int argc, char const *argv[])
 
     //define pool of buffers
     PinnedCopyBuffer pinCpyBuffers[PINTRANSFERBUFFERS];
-    MNISTTRTBuffer trtBuffers[TRTBUFFERS];
+    MNISTTRTBuffer* trtBuffers[TRTBUFFERS];
 
     //define queues used to track availabe buffers and buffers ready for processing
     moodycamel::BlockingReaderWriterCircularBuffer<int> availPinBuffers(PINTRANSFERBUFFERS);
@@ -386,15 +381,23 @@ int main(int argc, char const *argv[])
     }
     
     for (int i = 0; i < TRTBUFFERS; i++){
-        trtBuffers[i] = MNISTTRTBuffer(inputIndex, outputIndex, nullptr);
+        trtBuffers[i] = new MNISTTRTBuffer(inputIndex, outputIndex, nullptr);
         availTRTBuffers.try_enqueue(i);
     }
 
     //keep track of samples processed
     atomic<int> pinTransferIdx{0};
     atomic<int> cudaTransferIdx{0};
+    atomic<int> trtExecuteIdx{0};
 
     //events to keep track of async functions finishing
+    cudaEvent_t cpyComplete[TRTBUFFERS];
+    cudaEvent_t inpConsumed[TRTBUFFERS];
+    for (int i = 0; i < TRTBUFFERS; i++)
+    {
+        cudaEventCreate(cpyComplete + i);
+        cudaEventCreate(inpConsumed + i);
+    }
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
@@ -404,14 +407,14 @@ int main(int argc, char const *argv[])
     cout << "Started Running Samples" << endl;
     auto start = chrono::high_resolution_clock::now();
 
-    // thread bufferGen{trtBufferGen, ref(trtInputQueue), inputIndex, outputIndex, outputs, OUTBUFFERLEN};
-    // thread dataTransfer{trtDataTransfer, ref(trtInputQueue), ref(trtExecQueue), pinnedNormData, stream, OUTBUFFERLEN};
-    // thread executeModel{trtExecute, ref(trtExecQueue), ref(context), stream, OUTBUFFERLEN};
 
-    // bufferGen.join();
-    // dataTransfer.join();
-    // executeModel.join();
+    thread mem2pin{HDDtoPinned, ref(availPinBuffers), ref(readyPinBuffers), pinCpyBuffers, ref(pinTransferIdx), normalizedData};
+    thread pin2gpu{PinnedtoCuda, ref(availPinBuffers), ref(readyPinBuffers), ref(availTRTBuffers), ref(readyTRTBuffers), pinCpyBuffers, trtBuffers, outputs, cpyComplete, ref(cudaTransferIdx), stream};
+    thread execTRT{executeTRT, ref(availTRTBuffers), ref(readyTRTBuffers), trtBuffers, inpConsumed, ref(context), ref(trtExecuteIdx), stream};
 
+    mem2pin.join();
+    pin2gpu.join();
+    execTRT.join();
 
     cudaStreamSynchronize(stream);
     auto end = chrono::high_resolution_clock::now();
@@ -430,10 +433,12 @@ int main(int argc, char const *argv[])
     
     std::cout << "Average inference time per image: " << elapsedTime.count()/OUTBUFFERLEN << "ms" << std::endl;
 
+    for (int i = 0; i < TRTBUFFERS; i++)
+    {
+        cudaEventDestroy(cpyComplete[i]);
+        cudaEventDestroy(inpConsumed[i]);
+    }
     cudaStreamDestroy(stream);
-    // cudaFreeHost(pinnedInput);
-    // cudaFreeHost(pinnedNormData);
-    // cudaFree(buffers[inputIndex]);
     cudaFreeHost(outputs);
 
     return 0;

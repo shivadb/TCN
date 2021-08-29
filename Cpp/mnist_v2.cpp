@@ -16,10 +16,10 @@
 
 #define DLACore -1
 #define IMGSIZE 784
-#define OUTBUFFERLEN 10
+#define OUTBUFFERLEN 10000
 #define ENGINEPATH "/runfa/shivb/TCN/TCN/mnist_pixel/models_trt/aug_k7l6_trt_amax.engine"
 #define FP16 false
-#define PRINTOUT true
+#define PRINTOUT false
 
 using namespace nvinfer1;
 using namespace std;
