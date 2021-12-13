@@ -19,6 +19,7 @@ An image generated from the provided Dockerfile in `Environment\Dockerfile` can 
 	-   The clipping is performed at the beginning of the image and the end of another random digit is stitched in  place of the missing data to simulate streaming data
 
 -   Examples:
+
 ![Augmented Images](https://github.com/shivadb/TCN/blob/master/docs/augmented_train_samples.PNG)
 
 Training can be performed using `pmnist_aug_test.py`. Following is an example command:
