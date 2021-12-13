@@ -41,7 +41,6 @@ Sequential Implementation:
 -   Our model is designed to output a prediction after processing each pixel. Due to the augmentation performed for training, it makes more sense to consider the last n outputs to compute the final prediction
 -   In the below table we consider the last n outputs before the full image is seen by the model, and take the highest occurring output as the final prediction for the current digit:
 
-```markdown
 | n   	| Accuracy (%) 	|
 |-----	|--------------	|
 | 1   	| 93.0         	|
@@ -49,7 +48,7 @@ Sequential Implementation:
 | 100 	| 97.9         	|
 | 150 	| 98.2         	|
 | 200 	| 98.3         	|
-```
+
 
 The model can be qualitatively verified using the following Ipython notebook: `Torch Demo.ipynb`
 
@@ -74,8 +73,6 @@ More details on the approach can be found in `docs\TCN.pdf`. The following resul
 
 The following results are obtained by executing the multistreaming and multithreading  implementation in `mnist_multistream_v3.cpp` on a GTX 1080 GPU.
 
-
-```markdown
 |     HDD to Pinned Mem   (# threads)    	|     CUDA Copy and   Execution (# threads)    	|     Avg Execution Time   (ms)    	|
 |----------------------------------------	|----------------------------------------------	|----------------------------------	|
 |     1                                  	|     1                                        	|     0.39                         	|
@@ -90,4 +87,4 @@ The following results are obtained by executing the multistreaming and multithre
 |     4                                  	|     4                                        	|     0.43                         	|
 |     8                                  	|     4                                        	|     0.42                         	|
 |     16                                 	|     4                                        	|     0.42                         	|
-```
+
